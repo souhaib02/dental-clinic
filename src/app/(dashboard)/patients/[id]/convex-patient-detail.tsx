@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import dynamic from "next/dynamic"
+import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "convex/_generated/api"
 import {
   ArrowLeft,
   Pencil,
@@ -25,6 +26,7 @@ import {
   User as UserIcon,
 } from "lucide-react"
 import { formatDate, formatCurrency } from "@/lib/utils"
+import type { Id } from "convex/_generated/dataModel"
 import type {
   Patient,
   Appointment,
@@ -73,172 +75,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { patientSchema, type PatientFormData } from "@/lib/zod-schemas"
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const MOCK_PATIENT: Patient = {
-  _id: "p1",
-  _creationTime: Date.now() - 86400000 * 10,
-  firstName: "Jean",
-  lastName: "Dupont",
-  dateOfBirth: "1985-03-15",
-  gender: "male",
-  phone: "+212 6 12 34 56 78",
-  email: "jean.dupont@email.com",
-  address: "12 Rue de la Liberté, Casablanca",
-  profession: "Ingénieur",
-  bloodGroup: "A+",
-  allergies: "Pénicilline",
-  insuranceCompany: "CNOPS",
-  insuranceNumber: "CNOPS-12345",
-  createdBy: "u1",
-}
-
-const MOCK_APPOINTMENTS: Appointment[] = [
-  {
-    _id: "a1",
-    _creationTime: Date.now() - 86400000 * 2,
-    patientId: "p1",
-    dentistId: "u2",
-    date: "2026-06-05",
-    startTime: "09:00",
-    endTime: "09:30",
-    status: "scheduled",
-    reason: "Détartrage",
-    createdBy: "u1",
-  },
-  {
-    _id: "a2",
-    _creationTime: Date.now() - 86400000 * 5,
-    patientId: "p1",
-    dentistId: "u2",
-    date: "2026-05-20",
-    startTime: "14:00",
-    endTime: "14:45",
-    status: "completed",
-    reason: "Carie dent 26",
-    createdBy: "u1",
-  },
-  {
-    _id: "a3",
-    _creationTime: Date.now() - 86400000 * 15,
-    patientId: "p1",
-    dentistId: "u2",
-    date: "2026-04-10",
-    startTime: "10:00",
-    endTime: "10:30",
-    status: "cancelled",
-    reason: "Contrôle",
-    notes: "Annulé par le patient",
-    createdBy: "u1",
-  },
-]
-
-const MOCK_INVOICES: Invoice[] = [
-  {
-    _id: "i1",
-    _creationTime: Date.now() - 86400000 * 5,
-    patientId: "p1",
-    invoiceNumber: "FAC-2026-0001",
-    items: [
-      { description: "Détartrage", quantity: 1, unitPrice: 300, total: 300 },
-    ],
-    subtotal: 300,
-    tax: 0,
-    total: 300,
-    paidAmount: 300,
-    status: "paid",
-    dueDate: "2026-05-20",
-    issuedDate: "2026-05-20",
-    createdBy: "u1",
-  },
-  {
-    _id: "i2",
-    _creationTime: Date.now() - 86400000 * 2,
-    patientId: "p1",
-    invoiceNumber: "FAC-2026-0005",
-    items: [
-      {
-        description: "Traitement carie dent 26",
-        quantity: 1,
-        unitPrice: 600,
-        total: 600,
-      },
-      { description: "Anesthésie", quantity: 1, unitPrice: 100, total: 100 },
-    ],
-    subtotal: 700,
-    tax: 0,
-    total: 700,
-    paidAmount: 200,
-    status: "partial",
-    dueDate: "2026-06-15",
-    issuedDate: "2026-05-25",
-    createdBy: "u1",
-  },
-]
-
-const MOCK_RECORDS: MedicalRecord[] = [
-  {
-    _id: "r1",
-    _creationTime: Date.now() - 86400000 * 10,
-    patientId: "p1",
-    type: "diagnosis",
-    title: "Carie dentaire",
-    description: "Carie profonde sur dent 26 nécessitant un traitement",
-    doctorId: "u2",
-    date: "2026-05-20",
-  },
-  {
-    _id: "r2",
-    _creationTime: Date.now() - 86400000 * 8,
-    patientId: "p1",
-    type: "treatment_plan",
-    title: "Plan de traitement",
-    description:
-      "Détartrage + traitement carie dent 26 + contrôle dans 6 mois",
-    doctorId: "u2",
-    date: "2026-05-20",
-  },
-  {
-    _id: "r3",
-    _creationTime: Date.now() - 86400000 * 3,
-    patientId: "p1",
-    type: "clinical_note",
-    title: "Note de suivi",
-    description: "Patient répond bien au traitement. Prochain rdv dans 3 mois.",
-    doctorId: "u2",
-    date: "2026-05-25",
-  },
-]
-
-const MOCK_TREATMENTS: Treatment[] = [
-  {
-    _id: "t1",
-    _creationTime: Date.now() - 86400000 * 8,
-    patientId: "p1",
-    name: "Détartrage",
-    description: "Détartrage complet",
-    cost: 300,
-    status: "completed",
-    startDate: "2026-05-20",
-    endDate: "2026-05-20",
-    doctorId: "u2",
-  },
-  {
-    _id: "t2",
-    _creationTime: Date.now() - 86400000 * 5,
-    patientId: "p1",
-    name: "Traitement carie",
-    description: "Traitement carie dent 26",
-    toothNumber: 26,
-    cost: 600,
-    status: "in_progress",
-    startDate: "2026-05-25",
-    doctorId: "u2",
-  },
-]
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -318,11 +154,16 @@ function InfoTab({
   )
 }
 
-function AppointmentsTab({ patientId }: { patientId: string }) {
-  const appointments = useMemo(
-    () => MOCK_APPOINTMENTS.filter((a) => a.patientId === patientId),
-    [patientId]
-  )
+function AppointmentsTab({ patientId }: { patientId: Id<"patients"> }) {
+  const appointments = useQuery(api.appointments.list, { patientId })
+
+  if (appointments === undefined) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   if (appointments.length === 0) {
     return <EmptyTab icon={Calendar} message="Aucun rendez-vous trouvé." />
@@ -362,11 +203,16 @@ function AppointmentsTab({ patientId }: { patientId: string }) {
   )
 }
 
-function InvoicesTab({ patientId }: { patientId: string }) {
-  const invoices = useMemo(
-    () => MOCK_INVOICES.filter((i) => i.patientId === patientId),
-    [patientId]
-  )
+function InvoicesTab({ patientId }: { patientId: Id<"patients"> }) {
+  const invoices = useQuery(api.invoices.list, { patientId })
+
+  if (invoices === undefined) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   if (invoices.length === 0) {
     return <EmptyTab icon={FileText} message="Aucune facture trouvée." />
@@ -404,11 +250,16 @@ function InvoicesTab({ patientId }: { patientId: string }) {
   )
 }
 
-function MedicalRecordsTab({ patientId }: { patientId: string }) {
-  const records = useMemo(
-    () => MOCK_RECORDS.filter((r) => r.patientId === patientId),
-    [patientId]
-  )
+function MedicalRecordsTab({ patientId }: { patientId: Id<"patients"> }) {
+  const records = useQuery(api.medicalRecords.listByPatient, { patientId })
+
+  if (records === undefined) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   if (records.length === 0) {
     return <EmptyTab icon={Stethoscope} message="Aucun dossier médical trouvé." />
@@ -442,11 +293,16 @@ function MedicalRecordsTab({ patientId }: { patientId: string }) {
   )
 }
 
-function TreatmentsTab({ patientId }: { patientId: string }) {
-  const treatments = useMemo(
-    () => MOCK_TREATMENTS.filter((t) => t.patientId === patientId),
-    [patientId]
-  )
+function TreatmentsTab({ patientId }: { patientId: Id<"patients"> }) {
+  const treatments = useQuery(api.medicalRecords.listTreatments, { patientId })
+
+  if (treatments === undefined) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   if (treatments.length === 0) {
     return <EmptyTab icon={Stethoscope} message="Aucun traitement trouvé." />
@@ -824,33 +680,28 @@ function EditPatientForm({
 // Main page component
 // ---------------------------------------------------------------------------
 
-function DemoPatientDetailPage() {
+export default function ConvexPatientDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
-  const patientId = params.id as string
+  const patientId = params.id as Id<"patients">
 
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const patient = useMemo(
-    () => (MOCK_PATIENT._id === patientId ? MOCK_PATIENT : null),
-    [patientId]
-  )
+  const patient = useQuery(api.patients.getById, { id: patientId })
+  const updatePatient = useMutation(api.patients.update)
 
   const handleUpdate = async (data: PatientFormData) => {
     setIsSubmitting(true)
     try {
-      await new Promise((r) => setTimeout(r, 500))
+      await updatePatient({ id: patientId as any, ...data })
       toast({
         title: "Patient modifié",
         description: "Les informations ont été mises à jour.",
         variant: "success",
       })
       setEditOpen(false)
-      router.refresh()
     } catch {
       toast({
         title: "Erreur",
@@ -862,19 +713,8 @@ function DemoPatientDetailPage() {
     }
   }
 
-  if (loading) return <LoadingSkeleton />
-  if (error)
-    return (
-      <ErrorState
-        message={error}
-        onRetry={() => {
-          setError(null)
-          setLoading(true)
-          setTimeout(() => setLoading(false), 500)
-        }}
-      />
-    )
-  if (!patient) {
+  if (patient === undefined) return <LoadingSkeleton />
+  if (patient === null) {
     return (
       <ErrorState message="Patient introuvable. Vérifiez l'identifiant et réessayez." />
     )
@@ -967,14 +807,4 @@ function DemoPatientDetailPage() {
       </Dialog>
     </div>
   )
-}
-
-const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
-const ConvexPatientDetailPage = dynamic(() => import("./convex-patient-detail"), { ssr: false })
-
-export default function PatientDetailPage() {
-  if (convexConfigured) {
-    return <ConvexPatientDetailPage />
-  }
-  return <DemoPatientDetailPage />
 }
