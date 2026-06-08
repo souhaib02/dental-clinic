@@ -1,15 +1,16 @@
 "use client"
 
-import dynamic from "next/dynamic"
-import { useState, useCallback, useMemo, useEffect } from "react"
-import { useAuth } from "@/hooks/use-auth"
-import { useToast } from "@/lib/toast"
+import { useState, useMemo, useCallback } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { stockItemSchema } from "@/lib/zod-schemas"
 import type { StockItem, StockMovement, StockMovementType, Supplier } from "@/lib/types"
 import { cn, formatCurrency, formatDate, formatDateTime } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
+import { useToast } from "@/lib/toast"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "convex/_generated/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -62,52 +63,12 @@ import {
   AlertCircle,
 } from "lucide-react"
 
-// ───── Mock Data ─────
-
-const MOCK_PRODUCTS: StockItem[] = [
-  { _id: "s1", _creationTime: Date.now(), name: "Gants latex (boîte 100)", reference: "GAN-001", category: "Protection", quantity: 15, minThreshold: 20, unitPrice: 8.5, description: "Gants latex sans poudre" },
-  { _id: "s2", _creationTime: Date.now(), name: "Masques chirurgicaux (boîte 50)", reference: "MAS-001", category: "Protection", quantity: 5, minThreshold: 10, unitPrice: 4.2, description: "" },
-  { _id: "s3", _creationTime: Date.now(), name: "Anesthésique lidocaïne", reference: "ANE-001", category: "Médicaments", quantity: 0, minThreshold: 5, unitPrice: 12.0, description: "Cartouche 1.8ml" },
-  { _id: "s4", _creationTime: Date.now(), name: "Composite dentaire A3", reference: "COM-001", category: "Consommables", quantity: 25, minThreshold: 3, unitPrice: 45.0, description: "Syringe 4g" },
-  { _id: "s5", _creationTime: Date.now(), name: "Bavettes jetables (paquet 500)", reference: "BAV-001", category: "Protection", quantity: 200, minThreshold: 50, unitPrice: 6.0, description: "" },
-  { _id: "s6", _creationTime: Date.now(), name: "Alcool médical 70° (1L)", reference: "ALC-001", category: "Hygiène", quantity: 8, minThreshold: 5, unitPrice: 3.5, description: "" },
-  { _id: "s7", _creationTime: Date.now(), name: "Aiguilles dentaires (boîte 100)", reference: "AIG-001", category: "Consommables", quantity: 3, minThreshold: 10, unitPrice: 15.0, description: "30G courte" },
-  { _id: "s8", _creationTime: Date.now(), name: "Empreinte silicone", reference: "EMP-001", category: "Prothèse", quantity: 12, minThreshold: 4, unitPrice: 22.0, description: "Kit base + catalyseur" },
-]
-
-const MOCK_CATEGORIES = ["Protection", "Médicaments", "Consommables", "Hygiène", "Prothèse"]
-
-const MOCK_SUPPLIERS: Supplier[] = [
-  { _id: "su1", _creationTime: Date.now(), name: "DentalPlus", contact: "Marc Dupont", phone: "0145678910", email: "contact@dentalplus.fr", address: "15 Rue de la Santé, 75012 Paris" },
-  { _id: "su2", _creationTime: Date.now(), name: "MediDent", contact: "Sophie Bernard", phone: "0145678920", email: "commandes@medident.fr", address: "8 Avenue Pasteur, 69003 Lyon" },
-  { _id: "su3", _creationTime: Date.now(), name: "OrthoSupply", contact: "Lucas Martin", phone: "0145678930", email: "info@orthosupply.fr" },
-]
-
 const MOVEMENT_TYPES: { value: StockMovementType; label: string }[] = [
   { value: "purchase", label: "Achat" },
   { value: "return", label: "Retour" },
   { value: "consumption", label: "Consommation" },
   { value: "loss", label: "Perte" },
 ]
-
-function generateMockMovements(items: StockItem[]): StockMovement[] {
-  const today = new Date()
-  return [
-    { _id: "m1", _creationTime: Date.now(), itemId: "s1", type: "purchase", quantity: 50, date: new Date(today.getTime() - 86400000 * 5).toISOString(), userId: "u1", notes: "Réapprovisionnement mensuel" },
-    { _id: "m2", _creationTime: Date.now(), itemId: "s1", type: "consumption", quantity: 10, date: new Date(today.getTime() - 86400000 * 3).toISOString(), userId: "u1" },
-    { _id: "m3", _creationTime: Date.now(), itemId: "s3", type: "purchase", quantity: 20, date: new Date(today.getTime() - 86400000 * 10).toISOString(), userId: "u1" },
-    { _id: "m4", _creationTime: Date.now(), itemId: "s3", type: "consumption", quantity: 5, date: new Date(today.getTime() - 86400000 * 7).toISOString(), userId: "u1" },
-    { _id: "m5", _creationTime: Date.now(), itemId: "s3", type: "consumption", quantity: 8, date: new Date(today.getTime() - 86400000 * 4).toISOString(), userId: "u1" },
-    { _id: "m6", _creationTime: Date.now(), itemId: "s3", type: "consumption", quantity: 7, date: new Date(today.getTime() - 86400000 * 2).toISOString(), userId: "u1", notes: "Urgence patient" },
-  ]
-}
-
-let mockItems = [...MOCK_PRODUCTS]
-let mockMovements = generateMockMovements(MOCK_PRODUCTS)
-let mockSuppliers = [...MOCK_SUPPLIERS]
-let mockItemIdCounter = MOCK_PRODUCTS.length
-let mockMovementIdCounter = mockMovements.length
-let mockSupplierIdCounter = MOCK_SUPPLIERS.length
 
 const supplierFormSchema = z.object({
   name: z.string().min(1, "Nom requis"),
@@ -145,114 +106,6 @@ const MOVEMENT_STYLES: Record<StockMovementType, { label: string; className: str
   return: { label: "Retour", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800" },
   consumption: { label: "Consommation", className: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800" },
   loss: { label: "Perte", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800" },
-}
-
-// ───── Hook ─────
-
-function useStockData() {
-  const [items, setItems] = useState<StockItem[]>([])
-  const [movements, setMovements] = useState<StockMovement[]>([])
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const { toast } = useToast()
-
-  useEffect(() => {
-    try {
-      setItems(mockItems)
-      setMovements(mockMovements)
-      setSuppliers(mockSuppliers)
-    } catch {
-      setError("Erreur lors du chargement des données")
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const lowStockItems = useMemo(() => items.filter((i) => i.quantity <= i.minThreshold), [items])
-
-  const addItem = useCallback(async (data: z.infer<typeof stockItemSchema>) => {
-    mockItemIdCounter++
-    const newItem: StockItem = {
-      _id: `s${mockItemIdCounter}`,
-      _creationTime: Date.now(),
-      ...data,
-    }
-    mockItems = [...mockItems, newItem]
-    setItems(mockItems)
-    toast({ title: "Produit créé", description: `${data.name} ajouté au stock`, variant: "success" })
-  }, [toast])
-
-  const updateItem = useCallback(async (id: string, data: Partial<StockItem>) => {
-    mockItems = mockItems.map((i) => i._id === id ? { ...i, ...data } : i)
-    setItems(mockItems)
-    toast({ title: "Produit mis à jour", variant: "success" })
-  }, [toast])
-
-  const deleteItem = useCallback(async (id: string) => {
-    const item = mockItems.find((i) => i._id === id)
-    mockItems = mockItems.filter((i) => i._id !== id)
-    setItems(mockItems)
-    toast({ title: "Produit supprimé", description: item?.name, variant: "success" })
-  }, [toast])
-
-  const recordMovement = useCallback(async (data: z.infer<typeof movementFormSchema>) => {
-    mockMovementIdCounter++
-    const movement: StockMovement = {
-      _id: `m${mockMovementIdCounter}`,
-      _creationTime: Date.now(),
-      itemId: data.itemId,
-      type: data.type,
-      quantity: data.quantity,
-      date: new Date().toISOString(),
-      notes: data.notes || undefined,
-      userId: "u1",
-    }
-    mockMovements = [...mockMovements, movement]
-    setMovements(mockMovements)
-
-    const item = mockItems.find((i) => i._id === data.itemId)
-    if (item) {
-      let delta = data.quantity
-      if (data.type === "consumption" || data.type === "loss") delta = -delta
-      updateItem(data.itemId, { quantity: Math.max(0, item.quantity + delta) })
-    }
-    toast({ title: "Mouvement enregistré", variant: "success" })
-  }, [toast, updateItem])
-
-  const addSupplier = useCallback(async (data: z.infer<typeof supplierFormSchema>) => {
-    mockSupplierIdCounter++
-    const supplier: Supplier = {
-      _id: `su${mockSupplierIdCounter}`,
-      _creationTime: Date.now(),
-      name: data.name,
-      contact: data.contact,
-      phone: data.phone,
-      email: data.email || undefined,
-      address: data.address || undefined,
-    }
-    mockSuppliers = [...mockSuppliers, supplier]
-    setSuppliers(mockSuppliers)
-    toast({ title: "Fournisseur créé", description: data.name, variant: "success" })
-  }, [toast])
-
-  const updateSupplier = useCallback(async (id: string, data: Partial<Supplier>) => {
-    mockSuppliers = mockSuppliers.map((s) => s._id === id ? { ...s, ...data } : s)
-    setSuppliers(mockSuppliers)
-    toast({ title: "Fournisseur mis à jour", variant: "success" })
-  }, [toast])
-
-  const deleteSupplier = useCallback(async (id: string) => {
-    mockSuppliers = mockSuppliers.filter((s) => s._id !== id)
-    setSuppliers(mockSuppliers)
-    toast({ title: "Fournisseur supprimé", variant: "success" })
-  }, [toast])
-
-  return {
-    items, movements, suppliers, lowStockItems, loading, error,
-    addItem, updateItem, deleteItem, recordMovement,
-    addSupplier, updateSupplier, deleteSupplier,
-  }
 }
 
 // ───── Sub-components ─────
@@ -1141,34 +994,144 @@ function SuppliersTab({
 
 // ───── Main Page ─────
 
-const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
-const ConvexStockPage = dynamic(() => import("./convex-stock"), { ssr: false })
-
-export default function StockPage() {
-  if (convexConfigured) {
-    return <ConvexStockPage />
-  }
+export default function ConvexStockPage() {
   const { user } = useAuth()
-  const {
-    items, movements, suppliers, lowStockItems, loading, error,
-    addItem, updateItem, deleteItem, recordMovement,
-    addSupplier, updateSupplier, deleteSupplier,
-  } = useStockData()
+  const { toast } = useToast()
+
+  const convexItems = useQuery(api.stock.listItems, {})
+  const convexMovements = useQuery(api.stock.listMovements, {})
+  const convexSuppliers = useQuery(api.suppliers.list)
+  const convexLowStock = useQuery(api.stock.getLowStockItems)
+
+  const createItem = useMutation(api.stock.createItem)
+  const updateItem = useMutation(api.stock.updateItem)
+  const deleteItem = useMutation(api.stock.deleteItem)
+  const recordMovement = useMutation(api.stock.recordMovement)
+  const createSupplier = useMutation(api.suppliers.create)
+  const updateSupplier = useMutation(api.suppliers.update)
+  const removeSupplier = useMutation(api.suppliers.remove)
+
+  const items = convexItems ?? []
+  const movements = convexMovements ?? []
+  const suppliers = convexSuppliers ?? []
+  const lowStockItems = convexLowStock ?? []
+
+  const categories = useMemo(() => {
+    const cats = new Set(items.map((i) => i.category))
+    return Array.from(cats).sort()
+  }, [items])
+
+  const loading = convexItems === undefined || convexMovements === undefined || convexSuppliers === undefined || convexLowStock === undefined
+
+  const handleAddItem = useCallback(async (data: z.infer<typeof stockItemSchema>) => {
+    try {
+      await createItem({
+        name: data.name,
+        reference: data.reference,
+        category: data.category,
+        quantity: data.quantity,
+        minThreshold: data.minThreshold,
+        unitPrice: data.unitPrice,
+        supplierId: data.supplierId || undefined as any,
+        description: data.description || undefined,
+      })
+      toast({ title: "Produit créé", description: `${data.name} ajouté au stock`, variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de créer le produit.", variant: "destructive" })
+    }
+  }, [createItem, toast])
+
+  const handleUpdateItem = useCallback(async (id: string, data: Partial<StockItem>) => {
+    try {
+      await updateItem({
+        id: id as any,
+        name: data.name,
+        reference: data.reference,
+        category: data.category,
+        quantity: data.quantity,
+        minThreshold: data.minThreshold,
+        unitPrice: data.unitPrice,
+        supplierId: (data.supplierId || undefined) as any,
+        description: data.description || undefined,
+      })
+      toast({ title: "Produit mis à jour", variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de modifier le produit.", variant: "destructive" })
+    }
+  }, [updateItem, toast])
+
+  const handleDeleteItem = useCallback(async (id: string) => {
+    try {
+      await deleteItem({ id: id as any })
+      toast({ title: "Produit supprimé", variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de supprimer le produit.", variant: "destructive" })
+    }
+  }, [deleteItem, toast])
+
+  const handleRecordMovement = useCallback(async (data: z.infer<typeof movementFormSchema>) => {
+    if (!user?._id) {
+      toast({ title: "Erreur", description: "Utilisateur non connecté", variant: "destructive" })
+      return
+    }
+    try {
+      await recordMovement({
+        itemId: data.itemId as any,
+        type: data.type,
+        quantity: data.quantity,
+        notes: data.notes || undefined,
+        userId: user._id as any,
+      })
+      toast({ title: "Mouvement enregistré", variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible d'enregistrer le mouvement.", variant: "destructive" })
+    }
+  }, [recordMovement, toast, user])
+
+  const handleAddSupplier = useCallback(async (data: z.infer<typeof supplierFormSchema>) => {
+    try {
+      await createSupplier({
+        name: data.name,
+        contact: data.contact,
+        phone: data.phone,
+        email: data.email || undefined,
+        address: data.address || undefined,
+      })
+      toast({ title: "Fournisseur créé", description: data.name, variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de créer le fournisseur.", variant: "destructive" })
+    }
+  }, [createSupplier, toast])
+
+  const handleUpdateSupplier = useCallback(async (id: string, data: Partial<Supplier>) => {
+    try {
+      await updateSupplier({
+        id: id as any,
+        name: data.name,
+        contact: data.contact,
+        phone: data.phone,
+        email: data.email || undefined,
+        address: data.address || undefined,
+      })
+      toast({ title: "Fournisseur mis à jour", variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de modifier le fournisseur.", variant: "destructive" })
+    }
+  }, [updateSupplier, toast])
+
+  const handleDeleteSupplier = useCallback(async (id: string) => {
+    try {
+      await removeSupplier({ id: id as any })
+      toast({ title: "Fournisseur supprimé", variant: "success" })
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de supprimer le fournisseur.", variant: "destructive" })
+    }
+  }, [removeSupplier, toast])
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <AlertCircle className="h-12 w-12 text-destructive" />
-        <p className="text-destructive font-medium">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>Réessayer</Button>
       </div>
     )
   }
@@ -1205,10 +1168,10 @@ export default function StockPage() {
           <ProductsTab
             items={items}
             suppliers={suppliers}
-            categories={MOCK_CATEGORIES}
-            onAdd={addItem}
-            onUpdate={updateItem}
-            onDelete={deleteItem}
+            categories={categories}
+            onAdd={handleAddItem}
+            onUpdate={handleUpdateItem}
+            onDelete={handleDeleteItem}
           />
         </TabsContent>
 
@@ -1216,16 +1179,16 @@ export default function StockPage() {
           <MovementsTab
             movements={movements}
             items={items}
-            onRecord={recordMovement}
+            onRecord={handleRecordMovement}
           />
         </TabsContent>
 
         <TabsContent value="suppliers">
           <SuppliersTab
             suppliers={suppliers}
-            onAdd={addSupplier}
-            onUpdate={updateSupplier}
-            onDelete={deleteSupplier}
+            onAdd={handleAddSupplier}
+            onUpdate={handleUpdateSupplier}
+            onDelete={handleDeleteSupplier}
           />
         </TabsContent>
       </Tabs>

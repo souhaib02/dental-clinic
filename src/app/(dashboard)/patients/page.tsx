@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, lazy } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
@@ -884,6 +885,12 @@ function PatientsUI() {
   )
 }
 
+const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
+const ConvexPatientsPage = dynamic(() => import("./convex-patients"), { ssr: false })
+
 export default function PatientsPage() {
+  if (convexConfigured) {
+    return <ConvexPatientsPage />
+  }
   return <PatientsUI />
 }

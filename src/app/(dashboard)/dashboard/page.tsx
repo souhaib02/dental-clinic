@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import {
   Calendar,
   Users,
@@ -9,7 +8,6 @@ import {
   TrendingUp,
   AlertTriangle,
   XCircle,
-  Loader2,
   AlertCircle,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,41 +15,40 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import type { DashboardStats, Payment } from "@/lib/types"
+import { useQuery } from "convex/react"
+import { api } from "convex/_generated/api"
 
 const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
 
 interface RevenueDataPoint {
   month: string
   revenue: number
 }
 
-const defaultStats: DashboardStats = {
-  todayAppointments: 0,
-  patientsToday: 0,
-  upcomingAppointments: 0,
-  dailyRevenue: 0,
-  monthlyRevenue: 0,
-  lowStockItems: 0,
-  cancelledAppointments: 0,
-  recentPayments: [],
+const monthLabels: Record<string, string> = {
+  "2025-01": "Jan", "2025-02": "Fév", "2025-03": "Mar",
+  "2025-04": "Avr", "2025-05": "Mai", "2025-06": "Jun",
+  "2025-07": "Jul", "2025-08": "Aoû", "2025-09": "Sep",
+  "2025-10": "Oct", "2025-11": "Nov", "2025-12": "Déc",
 }
 
-const mockStats: DashboardStats = {
-  todayAppointments: 8,
-  patientsToday: 5,
-  upcomingAppointments: 12,
-  dailyRevenue: 1850,
-  monthlyRevenue: 28450,
-  lowStockItems: 3,
-  cancelledAppointments: 1,
-  recentPayments: [
-    { _id: "1", _creationTime: Date.now(), invoiceId: "inv-1", patientId: "p1", amount: 800, method: "cash", date: new Date().toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "2", _creationTime: Date.now(), invoiceId: "inv-2", patientId: "p2", amount: 250, method: "card", date: new Date().toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "3", _creationTime: Date.now(), invoiceId: "inv-3", patientId: "p3", amount: 1200, method: "transfer", date: new Date(Date.now() - 86400000).toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "4", _creationTime: Date.now(), invoiceId: "inv-4", patientId: "p4", amount: 450, method: "cash", date: new Date(Date.now() - 86400000).toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "5", _creationTime: Date.now(), invoiceId: "inv-5", patientId: "p5", amount: 600, method: "card", date: new Date(Date.now() - 2 * 86400000).toISOString().split("T")[0], receivedBy: "u1" },
-  ],
+function mockStats(): DashboardStats {
+  return {
+    todayAppointments: 8,
+    patientsToday: 5,
+    upcomingAppointments: 12,
+    dailyRevenue: 1850,
+    monthlyRevenue: 28450,
+    lowStockItems: 3,
+    cancelledAppointments: 1,
+    recentPayments: [
+      { _id: "1", _creationTime: Date.now(), invoiceId: "inv-1", patientId: "p1", amount: 800, method: "cash", date: new Date().toISOString().split("T")[0], receivedBy: "u1" },
+      { _id: "2", _creationTime: Date.now(), invoiceId: "inv-2", patientId: "p2", amount: 250, method: "card", date: new Date().toISOString().split("T")[0], receivedBy: "u1" },
+      { _id: "3", _creationTime: Date.now(), invoiceId: "inv-3", patientId: "p3", amount: 1200, method: "transfer", date: new Date(Date.now() - 86400000).toISOString().split("T")[0], receivedBy: "u1" },
+      { _id: "4", _creationTime: Date.now(), invoiceId: "inv-4", patientId: "p4", amount: 450, method: "cash", date: new Date(Date.now() - 86400000).toISOString().split("T")[0], receivedBy: "u1" },
+      { _id: "5", _creationTime: Date.now(), invoiceId: "inv-5", patientId: "p5", amount: 600, method: "card", date: new Date(Date.now() - 2 * 86400000).toISOString().split("T")[0], receivedBy: "u1" },
+    ],
+  }
 }
 
 const mockRevenue: RevenueDataPoint[] = [
@@ -62,26 +59,6 @@ const mockRevenue: RevenueDataPoint[] = [
   { month: "2025-05", revenue: 28450 },
   { month: "2025-06", revenue: 22100 },
 ]
-
-const monthLabels: Record<string, string> = {
-  "2025-01": "Jan", "2025-02": "Fév", "2025-03": "Mar",
-  "2025-04": "Avr", "2025-05": "Mai", "2025-06": "Jun",
-  "2025-07": "Jul", "2025-08": "Aoû", "2025-09": "Sep",
-  "2025-10": "Oct", "2025-11": "Nov", "2025-12": "Déc",
-}
-
-async function callConvex(path: string, args: Record<string, unknown> = {}) {
-  const res = await fetch(`${convexUrl}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ args }),
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text || `Erreur ${res.status}`)
-  }
-  return res.json()
-}
 
 function StatCard({
   icon: Icon,
@@ -196,53 +173,16 @@ function LoadingSkeleton() {
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats>(defaultStats)
-  const [revenue, setRevenue] = useState<RevenueDataPoint[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const convexStats = convexConfigured ? useQuery(api.dashboard.getStats) : undefined
+  const convexRevenue = convexConfigured ? useQuery(api.dashboard.getRevenueData) : undefined
+  const loading = convexConfigured && (convexStats === undefined || convexRevenue === undefined)
 
-  useEffect(() => {
-    async function loadData() {
-      if (!convexConfigured) {
-        setStats(mockStats)
-        setRevenue(mockRevenue)
-        setLoading(false)
-        return
-      }
-
-      try {
-        const [statsData, revenueData] = await Promise.all([
-          callConvex("query/dashboard:getStats"),
-          callConvex("query/dashboard:getRevenueData"),
-        ])
-        setStats(statsData as DashboardStats)
-        setRevenue((revenueData ?? []) as RevenueDataPoint[])
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Erreur de chargement")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadData()
-  }, [])
+  const stats: DashboardStats = convexConfigured
+    ? (convexStats ?? { todayAppointments: 0, patientsToday: 0, upcomingAppointments: 0, dailyRevenue: 0, monthlyRevenue: 0, lowStockItems: 0, cancelledAppointments: 0, recentPayments: [] })
+    : mockStats()
+  const revenue: RevenueDataPoint[] = convexConfigured ? (convexRevenue ?? []) : mockRevenue
 
   if (loading) return <LoadingSkeleton />
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <AlertCircle className="h-10 w-10 text-red-500" />
-        <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-        >
-          Réessayer
-        </button>
-      </div>
-    )
-  }
 
   const maxRevenue = Math.max(...revenue.map((r) => r.revenue), 1)
 
@@ -262,45 +202,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={Calendar}
-          label="Rendez-vous du jour"
-          value={stats.todayAppointments}
-        />
-        <StatCard
-          icon={Users}
-          label="Patients reçus"
-          value={stats.patientsToday}
-          variant={stats.patientsToday > 0 ? "default" : "default"}
-        />
-        <StatCard
-          icon={CalendarCheck}
-          label="À venir"
-          value={stats.upcomingAppointments}
-        />
-        <StatCard
-          icon={Euro}
-          label="CA Journalier"
-          value={formatCurrency(stats.dailyRevenue)}
-        />
-        <StatCard
-          icon={TrendingUp}
-          label="CA Mensuel"
-          value={formatCurrency(stats.monthlyRevenue)}
-          highlight
-        />
-        <StatCard
-          icon={AlertTriangle}
-          label="Alertes stock"
-          value={stats.lowStockItems}
-          variant={stats.lowStockItems > 0 ? "warning" : "default"}
-        />
-        <StatCard
-          icon={XCircle}
-          label="Rendez-vous annulés"
-          value={stats.cancelledAppointments}
-          variant={stats.cancelledAppointments > 0 ? "danger" : "default"}
-        />
+        <StatCard icon={Calendar} label="Rendez-vous du jour" value={stats.todayAppointments} />
+        <StatCard icon={Users} label="Patients reçus" value={stats.patientsToday} />
+        <StatCard icon={CalendarCheck} label="À venir" value={stats.upcomingAppointments} />
+        <StatCard icon={Euro} label="CA Journalier" value={formatCurrency(stats.dailyRevenue)} />
+        <StatCard icon={TrendingUp} label="CA Mensuel" value={formatCurrency(stats.monthlyRevenue)} highlight />
+        <StatCard icon={AlertTriangle} label="Alertes stock" value={stats.lowStockItems} variant={stats.lowStockItems > 0 ? "warning" : "default"} />
+        <StatCard icon={XCircle} label="Rendez-vous annulés" value={stats.cancelledAppointments} variant={stats.cancelledAppointments > 0 ? "danger" : "default"} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -326,16 +234,10 @@ export default function DashboardPage() {
                 <TableBody>
                   {stats.recentPayments.map((payment: Payment) => (
                     <TableRow key={payment._id}>
-                      <TableCell className="text-gray-600 dark:text-gray-400">
-                        {formatDate(payment.date)}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(payment.amount)}
-                      </TableCell>
+                      <TableCell className="text-gray-600 dark:text-gray-400">{formatDate(payment.date)}</TableCell>
+                      <TableCell className="font-medium">{formatCurrency(payment.amount)}</TableCell>
                       <TableCell>
-                        <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${methodBadge(payment.method)}`}
-                        >
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${methodBadge(payment.method)}`}>
                           {methodLabel(payment.method)}
                         </span>
                       </TableCell>
@@ -364,10 +266,7 @@ export default function DashboardPage() {
                     const height = (point.revenue / maxRevenue) * 100
                     const shortMonth = point.month.split("-")[1]
                     return (
-                      <div
-                        key={point.month}
-                        className="group relative flex flex-1 flex-col items-center gap-1"
-                      >
+                      <div key={point.month} className="group relative flex flex-1 flex-col items-center gap-1">
                         <div
                           className="w-full max-w-[48px] rounded-t-md bg-gradient-to-t from-blue-600 to-blue-400 transition-all hover:from-blue-700 hover:to-blue-500 dark:from-blue-700 dark:to-blue-500"
                           style={{ height: `${Math.max(height, 4)}%` }}

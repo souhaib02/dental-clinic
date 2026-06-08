@@ -1,7 +1,8 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { useState, useMemo, useEffect } from "react"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "convex/_generated/api"
 import { useForm, useFieldArray, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
@@ -82,102 +83,6 @@ import {
 } from "@/components/ui/form"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-
-// ---------------------------------------------------------------------------
-// Mock Data
-// ---------------------------------------------------------------------------
-
-const MOCK_PATIENTS: Patient[] = [
-  { _id: "p1", _creationTime: Date.now() - 86400000 * 30, firstName: "Jean", lastName: "Dupont", dateOfBirth: "1985-03-15", gender: "male", phone: "0612345678", createdBy: "u1" },
-  { _id: "p2", _creationTime: Date.now() - 86400000 * 25, firstName: "Marie", lastName: "Martin", dateOfBirth: "1990-07-22", gender: "female", phone: "0623456789", createdBy: "u1" },
-  { _id: "p3", _creationTime: Date.now() - 86400000 * 20, firstName: "Pierre", lastName: "Bernard", dateOfBirth: "1978-11-08", gender: "male", phone: "0634567890", createdBy: "u1" },
-  { _id: "p4", _creationTime: Date.now() - 86400000 * 15, firstName: "Sophie", lastName: "Petit", dateOfBirth: "1995-01-30", gender: "female", phone: "0645678901", createdBy: "u1" },
-  { _id: "p5", _creationTime: Date.now() - 86400000 * 10, firstName: "Lucas", lastName: "Moreau", dateOfBirth: "2000-06-14", gender: "male", phone: "0656789012", createdBy: "u1" },
-]
-
-let mockInvoiceIdCounter = 10
-let mockPaymentIdCounter = 10
-
-function generateMockInvoices(): Invoice[] {
-  const today = new Date()
-  const d = (offset: number) => {
-    const r = new Date(today)
-    r.setDate(r.getDate() + offset)
-    return r.toISOString().split("T")[0]
-  }
-
-  return [
-    {
-      _id: "inv-1", _creationTime: Date.now() - 86400000 * 5,
-      patientId: "p1", invoiceNumber: "FACT-2026-0001",
-      items: [
-        { description: "Détartrage complet", quantity: 1, unitPrice: 500, total: 500 },
-        { description: "Consultation", quantity: 1, unitPrice: 300, total: 300 },
-      ],
-      subtotal: 800, tax: 0, total: 800, paidAmount: 800,
-      status: "paid", dueDate: d(15), issuedDate: d(-5),
-      createdBy: "u1",
-    },
-    {
-      _id: "inv-2", _creationTime: Date.now() - 86400000 * 3,
-      patientId: "p2", invoiceNumber: "FACT-2026-0002",
-      items: [
-        { description: "Traitement canalaire", quantity: 1, unitPrice: 1500, total: 1500 },
-        { description: "Anesthésie", quantity: 1, unitPrice: 200, total: 200 },
-        { description: "Médicaments", quantity: 1, unitPrice: 150, total: 150 },
-      ],
-      subtotal: 1850, tax: 0, total: 1850, paidAmount: 1000,
-      status: "partial", dueDate: d(20), issuedDate: d(-3),
-      createdBy: "u1",
-    },
-    {
-      _id: "inv-3", _creationTime: Date.now() - 86400000 * 7,
-      patientId: "p3", invoiceNumber: "FACT-2026-0003",
-      items: [
-        { description: "Prothèse dentaire", quantity: 1, unitPrice: 3500, total: 3500 },
-      ],
-      subtotal: 3500, tax: 0, total: 3500, paidAmount: 0,
-      status: "unpaid", dueDate: d(10), issuedDate: d(-7),
-      notes: "Devis accepté le 15/05",
-      createdBy: "u1",
-    },
-    {
-      _id: "inv-4", _creationTime: Date.now() - 86400000 * 1,
-      patientId: "p4", invoiceNumber: "FACT-2026-0004",
-      items: [
-        { description: "Extraction dent de sagesse", quantity: 2, unitPrice: 600, total: 1200 },
-        { description: "Radio panoramique", quantity: 1, unitPrice: 400, total: 400 },
-      ],
-      subtotal: 1600, tax: 0, total: 1600, paidAmount: 1600,
-      status: "paid", dueDate: d(30), issuedDate: d(-1),
-      createdBy: "u1",
-    },
-    {
-      _id: "inv-5", _creationTime: Date.now() - 86400000 * 2,
-      patientId: "p5", invoiceNumber: "FACT-2026-0005",
-      items: [
-        { description: "Blanchiment dentaire", quantity: 1, unitPrice: 2500, total: 2500 },
-      ],
-      subtotal: 2500, tax: 0, total: 2500, paidAmount: 1500,
-      status: "partial", dueDate: d(25), issuedDate: d(-2),
-      createdBy: "u1",
-    },
-  ]
-}
-
-function generateMockPayments(): Payment[] {
-  return [
-    { _id: "pay-1", _creationTime: Date.now() - 86400000 * 5, invoiceId: "inv-1", patientId: "p1", amount: 800, method: "cash", date: new Date(Date.now() - 86400000 * 5).toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "pay-2", _creationTime: Date.now() - 86400000 * 3, invoiceId: "inv-2", patientId: "p2", amount: 500, method: "card", date: new Date(Date.now() - 86400000 * 3).toISOString().split("T")[0], reference: "CARD-1234", receivedBy: "u1" },
-    { _id: "pay-3", _creationTime: Date.now() - 86400000 * 1, invoiceId: "inv-2", patientId: "p2", amount: 500, method: "transfer", date: new Date(Date.now() - 86400000 * 1).toISOString().split("T")[0], reference: "VIREMENT-5678", receivedBy: "u1" },
-    { _id: "pay-4", _creationTime: Date.now() - 86400000 * 1, invoiceId: "inv-4", patientId: "p4", amount: 1600, method: "cash", date: new Date(Date.now() - 86400000 * 1).toISOString().split("T")[0], receivedBy: "u1" },
-    { _id: "pay-5", _creationTime: Date.now() - 86400000 * 2, invoiceId: "inv-5", patientId: "p5", amount: 1000, method: "card", date: new Date(Date.now() - 86400000 * 2).toISOString().split("T")[0], reference: "CARD-9012", receivedBy: "u1" },
-    { _id: "pay-6", _creationTime: Date.now() - 86400000 * 0, invoiceId: "inv-5", patientId: "p5", amount: 500, method: "insurance", date: new Date().toISOString().split("T")[0], reference: "ASSUR-3456", notes: "Prise en charge assurance", receivedBy: "u1" },
-  ]
-}
-
-let mockInvoices = generateMockInvoices()
-let mockPayments = generateMockPayments()
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -975,6 +880,8 @@ function InvoicesTab({
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all")
   const [search, setSearch] = useState("")
 
+  const createInvoice = useMutation(api.invoices.create)
+
   const filtered = useMemo(() => {
     let r = invoices
     if (statusFilter !== "all") r = r.filter((inv) => inv.status === statusFilter)
@@ -999,26 +906,19 @@ function InvoicesTab({
   }, [invoices])
 
   async function handleCreateInvoice(data: InvoiceFormData) {
-    mockInvoiceIdCounter++
-    const subtotal = data.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0)
-    const newInvoice: Invoice = {
-      _id: `inv-mock-${mockInvoiceIdCounter}`,
-      _creationTime: Date.now(),
-      patientId: data.patientId,
-      invoiceNumber: `FACT-2026-${String(mockInvoiceIdCounter).padStart(4, "0")}`,
-      items: data.items,
-      subtotal,
-      tax: 0,
-      total: subtotal,
-      paidAmount: 0,
-      status: "unpaid",
+    if (!user?._id) return
+    await createInvoice({
+      patientId: data.patientId as any,
+      items: data.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        total: item.quantity * item.unitPrice,
+      })),
       dueDate: data.dueDate,
-      issuedDate: new Date().toISOString().split("T")[0],
       notes: data.notes || undefined,
-      createdBy: user?._id ?? "u1",
-    }
-    mockInvoices = [newInvoice, ...mockInvoices]
-    onRefresh()
+      createdBy: user._id as any,
+    })
   }
 
   function openDetail(invoice: Invoice) {
@@ -1184,6 +1084,8 @@ function PaymentsTab({
   const [createOpen, setCreateOpen] = useState(false)
   const [search, setSearch] = useState("")
 
+  const createPayment = useMutation(api.payments.create)
+
   const filtered = useMemo(() => {
     if (!search.trim()) return payments
     const s = search.toLowerCase()
@@ -1199,32 +1101,17 @@ function PaymentsTab({
   }, [payments, search, patients, invoices])
 
   async function handleCreatePayment(data: PaymentFormData & { patientId: string }) {
-    mockPaymentIdCounter++
-    const newPayment: Payment = {
-      _id: `pay-mock-${mockPaymentIdCounter}`,
-      _creationTime: Date.now(),
-      invoiceId: data.invoiceId,
-      patientId: data.patientId,
+    if (!user?._id) return
+    await createPayment({
+      invoiceId: data.invoiceId as any,
+      patientId: data.patientId as any,
       amount: data.amount,
       method: data.method,
       date: data.date,
       reference: data.reference || undefined,
       notes: data.notes || undefined,
-      receivedBy: user?._id ?? "u1",
-    }
-
-    mockInvoices = mockInvoices.map((inv) => {
-      if (inv._id === data.invoiceId) {
-        const newPaid = inv.paidAmount + data.amount
-        const newStatus: PaymentStatus =
-          newPaid >= inv.total ? "paid" : newPaid > 0 ? "partial" : "unpaid"
-        return { ...inv, paidAmount: newPaid, status: newStatus }
-      }
-      return inv
+      receivedBy: user._id as any,
     })
-
-    mockPayments = [newPayment, ...mockPayments]
-    onRefresh()
   }
 
   return (
@@ -1315,26 +1202,20 @@ function PaymentsTab({
 }
 
 // ---------------------------------------------------------------------------
-// Main Page
+// Main Convex Page
 // ---------------------------------------------------------------------------
 
-function BillingUI() {
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    mockInvoices = generateMockInvoices()
-    return mockInvoices
-  })
-  const [payments, setPayments] = useState<Payment[]>(() => {
-    mockPayments = generateMockPayments()
-    return mockPayments
-  })
-  const [patients, setPatients] = useState<Patient[]>(MOCK_PATIENTS)
+export default function ConvexBillingPage() {
+  const invoices = useQuery(api.invoices.list, {})
+  const payments = useQuery(api.payments.list, {})
+  const patients = useQuery(api.patients.list, {})
 
-  function loadData() {
-    mockInvoices = generateMockInvoices()
-    mockPayments = generateMockPayments()
-    setInvoices(mockInvoices)
-    setPayments(mockPayments)
-    setPatients(MOCK_PATIENTS)
+  if (invoices === undefined || payments === undefined || patients === undefined) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+      </div>
+    )
   }
 
   return (
@@ -1364,7 +1245,7 @@ function BillingUI() {
             invoices={invoices}
             patients={patients}
             payments={payments}
-            onRefresh={loadData}
+            onRefresh={() => {}}
           />
         </TabsContent>
         <TabsContent value="payments">
@@ -1372,18 +1253,10 @@ function BillingUI() {
             payments={payments}
             invoices={invoices}
             patients={patients}
-            onRefresh={loadData}
+            onRefresh={() => {}}
           />
         </TabsContent>
       </Tabs>
     </div>
   )
-}
-
-const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
-const ConvexBillingPage = dynamic(() => import("./convex-billing"), { ssr: false })
-
-export default function BillingPage() {
-  if (convexConfigured) return <ConvexBillingPage />
-  return <BillingUI />
 }

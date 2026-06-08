@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
-import dynamic from "next/dynamic"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "convex/_generated/api"
 import {
   Plus,
   Pencil,
@@ -112,69 +113,6 @@ const ROLE_PERMISSIONS: Record<Role, { label: string; permissions: string[] }> =
       ],
     },
   }
-
-const MOCK_USERS: User[] = [
-  {
-    _id: "u1",
-    _creationTime: Date.now() - 86400000 * 120,
-    email: "admin@clinique.fr",
-    name: "Admin Principal",
-    role: "admin",
-    phone: "+212 6 00 00 00 01",
-    isActive: true,
-    lastLogin: Date.now() - 3600000,
-  },
-  {
-    _id: "u2",
-    _creationTime: Date.now() - 86400000 * 90,
-    email: "sarah.ahmed@clinique.fr",
-    name: "Dr. Sarah Ahmed",
-    role: "dentist",
-    phone: "+212 6 12 34 56 78",
-    isActive: true,
-    lastLogin: Date.now() - 7200000,
-  },
-  {
-    _id: "u3",
-    _creationTime: Date.now() - 86400000 * 60,
-    email: "karim.benzema@clinique.fr",
-    name: "Dr. Karim Benzema",
-    role: "dentist",
-    phone: "+212 6 98 76 54 32",
-    isActive: true,
-    lastLogin: Date.now() - 86400000,
-  },
-  {
-    _id: "u4",
-    _creationTime: Date.now() - 86400000 * 30,
-    email: "leila.mokhtar@clinique.fr",
-    name: "Dr. Leila Mokhtar",
-    role: "dentist",
-    phone: "+212 6 55 44 33 22",
-    isActive: true,
-    lastLogin: Date.now() - 86400000 * 2,
-  },
-  {
-    _id: "u5",
-    _creationTime: Date.now() - 86400000 * 15,
-    email: "fatima.alami@clinique.fr",
-    name: "Fatima Alami",
-    role: "secretary",
-    phone: "+212 6 11 22 33 44",
-    isActive: true,
-    lastLogin: Date.now() - 43200000,
-  },
-  {
-    _id: "u6",
-    _creationTime: Date.now() - 86400000 * 7,
-    email: "youssef.ouali@clinique.fr",
-    name: "Youssef Ouali",
-    role: "secretary",
-    phone: "+212 6 77 88 99 00",
-    isActive: false,
-    lastLogin: Date.now() - 86400000 * 30,
-  },
-]
 
 function RoleBadge({ role }: { role: Role }) {
   const label = ROLE_OPTIONS.find((o) => o.value === role)?.label ?? role
@@ -431,81 +369,13 @@ function PermissionCard() {
   )
 }
 
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="h-8 w-56 animate-pulse rounded bg-muted" />
-        <div className="h-9 w-40 animate-pulse rounded bg-muted" />
-      </div>
-      <div className="h-10 w-44 animate-pulse rounded bg-muted" />
-      <div className="space-y-2">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-14 w-full animate-pulse rounded bg-muted"
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-4 py-12">
-        <div className="rounded-full bg-muted p-4">
-          <UserIcon className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <div className="text-center">
-          <p className="text-lg font-medium">Aucun utilisateur</p>
-          <p className="text-sm text-muted-foreground">
-            Commencez par ajouter votre premier utilisateur.
-          </p>
-        </div>
-        <Button onClick={onAdd}>
-          <Plus className="h-4 w-4" />
-          Nouvel utilisateur
-        </Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string
-  onRetry?: () => void
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-4 py-12">
-        <div className="rounded-full bg-destructive/10 p-4">
-          <AlertCircle className="h-8 w-8 text-destructive" />
-        </div>
-        <div className="text-center">
-          <p className="text-lg font-medium">Erreur</p>
-          <p className="text-sm text-muted-foreground">{message}</p>
-        </div>
-        {onRetry && (
-          <Button variant="outline" onClick={onRetry}>
-            Réessayer
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function UsersUI() {
+export default function ConvexUsersPage() {
   const { toast } = useToast()
 
-  const [users, setUsers] = useState<User[]>(MOCK_USERS)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const convexUsers = useQuery(api.users.list)
+  const createUser = useMutation(api.users.create)
+  const updateUser = useMutation(api.users.update)
+  const removeUser = useMutation(api.users.remove)
 
   const [search, setSearch] = useState("")
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all")
@@ -519,6 +389,8 @@ function UsersUI() {
 
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 10
+
+  const users = convexUsers ?? []
 
   const filtered = useMemo(() => {
     let result = users
@@ -547,16 +419,13 @@ function UsersUI() {
     async (data: UserFormData) => {
       setIsSubmitting(true)
       try {
-        const newUser: User = {
-          _id: `u${Date.now()}`,
-          _creationTime: Date.now(),
+        await createUser({
           email: data.email,
           name: data.name,
           role: data.role,
           phone: data.phone || undefined,
-          isActive: true,
-        }
-        setUsers((prev) => [...prev, newUser])
+          password: data.password,
+        })
         setCreateOpen(false)
         toast({
           title: "Utilisateur créé",
@@ -573,7 +442,7 @@ function UsersUI() {
         setIsSubmitting(false)
       }
     },
-    [toast]
+    [createUser, toast]
   )
 
   const handleUpdate = useCallback(
@@ -581,19 +450,14 @@ function UsersUI() {
       if (!editingUser) return
       setIsSubmitting(true)
       try {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u._id === editingUser._id
-              ? {
-                  ...u,
-                  email: data.email,
-                  name: data.name,
-                  role: data.role,
-                  phone: data.phone || undefined,
-                }
-              : u
-          )
-        )
+        await updateUser({
+          id: editingUser._id as any,
+          email: data.email,
+          name: data.name,
+          role: data.role,
+          phone: data.phone || undefined,
+          password: data.password || undefined,
+        })
         setEditOpen(false)
         setEditingUser(null)
         toast({
@@ -611,30 +475,32 @@ function UsersUI() {
         setIsSubmitting(false)
       }
     },
-    [editingUser, toast]
+    [editingUser, updateUser, toast]
   )
 
-  const handleToggleActive = useCallback(() => {
+  const handleToggleActive = useCallback(async () => {
     if (!togglingUser) return
-    setUsers((prev) =>
-      prev.map((u) =>
-        u._id === togglingUser._id
-          ? { ...u, isActive: !u.isActive }
-          : u
-      )
-    )
-    setToggleOpen(false)
-    setTogglingUser(null)
-    toast({
-      title: togglingUser.isActive
-        ? "Utilisateur désactivé"
-        : "Utilisateur activé",
-      description: togglingUser.isActive
-        ? `${togglingUser.name} ne peut plus se connecter.`
-        : `${togglingUser.name} peut maintenant se connecter.`,
-      variant: "default",
-    })
-  }, [togglingUser, toast])
+    try {
+      await updateUser({ id: togglingUser._id as any, isActive: !togglingUser.isActive })
+      setToggleOpen(false)
+      setTogglingUser(null)
+      toast({
+        title: togglingUser.isActive
+          ? "Utilisateur désactivé"
+          : "Utilisateur activé",
+        description: togglingUser.isActive
+          ? `${togglingUser.name} ne peut plus se connecter.`
+          : `${togglingUser.name} peut maintenant se connecter.`,
+        variant: "default",
+      })
+    } catch {
+      toast({
+        title: "Erreur",
+        description: "Impossible de modifier le statut.",
+        variant: "destructive",
+      })
+    }
+  }, [togglingUser, updateUser, toast])
 
   const openEdit = useCallback((user: User) => {
     setEditingUser(user)
@@ -645,6 +511,14 @@ function UsersUI() {
     setTogglingUser(user)
     setToggleOpen(true)
   }, [])
+
+  if (convexUsers === undefined) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -699,42 +573,45 @@ function UsersUI() {
         </Select>
       </div>
 
-      {loading ? (
-        <LoadingSkeleton />
-      ) : error ? (
-        <ErrorState
-          message={error}
-          onRetry={() => {
-            setError(null)
-            setLoading(true)
-            setTimeout(() => setLoading(false), 500)
-          }}
-        />
+      {filtered.length === 0 && (search || roleFilter !== "all") ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-12">
+            <Search className="h-8 w-8 text-muted-foreground" />
+            <div className="text-center">
+              <p className="text-lg font-medium">Aucun résultat</p>
+              <p className="text-sm text-muted-foreground">
+                Aucun utilisateur ne correspond à vos critères.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearch("")
+                setRoleFilter("all")
+              }}
+            >
+              Effacer les filtres
+            </Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
-        search || roleFilter !== "all" ? (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-4 py-12">
-              <Search className="h-8 w-8 text-muted-foreground" />
-              <div className="text-center">
-                <p className="text-lg font-medium">Aucun résultat</p>
-                <p className="text-sm text-muted-foreground">
-                  Aucun utilisateur ne correspond à vos critères.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearch("")
-                  setRoleFilter("all")
-                }}
-              >
-                Effacer les filtres
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <EmptyState onAdd={() => setCreateOpen(true)} />
-        )
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-12">
+            <div className="rounded-full bg-muted p-4">
+              <UserIcon className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-medium">Aucun utilisateur</p>
+              <p className="text-sm text-muted-foreground">
+                Commencez par ajouter votre premier utilisateur.
+              </p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Nouvel utilisateur
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader className="px-6 py-4">
@@ -920,14 +797,4 @@ function UsersUI() {
       </AlertDialog>
     </div>
   )
-}
-
-const convexConfigured = !!process.env.NEXT_PUBLIC_CONVEX_URL
-const ConvexUsersPage = dynamic(() => import("./convex-users"), { ssr: false })
-
-export default function UsersPage() {
-  if (convexConfigured) {
-    return <ConvexUsersPage />
-  }
-  return <UsersUI />
 }
